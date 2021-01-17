@@ -25,7 +25,7 @@ import {
 import fetch from 'cross-fetch';
 import parseGitUri from 'git-url-parse';
 import { Readable } from 'stream';
-import { NotFoundError } from '../errors';
+import { NotFoundError, NotModifiedError } from '../errors';
 import { ReadTreeResponseFactory } from './tree';
 import {
   ReaderFactory,
@@ -104,6 +104,11 @@ export class BitbucketUrlReader implements UrlReader {
     const gitUrl: parseGitUri.GitUrl = parseGitUri(url);
     const { name: repoName, owner: project, resource, filepath } = gitUrl;
 
+    const lastCommitShortHash = await this.getLastCommitShortHash(url);
+    if (options?.sha && options.sha === lastCommitShortHash) {
+      throw new NotModifiedError();
+    }
+
     const isHosted = resource === 'bitbucket.org';
 
     const downloadUrl = await getBitbucketDownloadUrl(url, this.config);
@@ -121,7 +126,6 @@ export class BitbucketUrlReader implements UrlReader {
 
     let folderPath = `${project}-${repoName}`;
     if (isHosted) {
-      const lastCommitShortHash = await this.getLastCommitShortHash(url);
       folderPath = `${project}-${repoName}-${lastCommitShortHash}`;
     }
 
@@ -132,8 +136,7 @@ export class BitbucketUrlReader implements UrlReader {
     });
 
     const response = archiveResponse as ReadTreeResponse;
-    // TODO: Just a placeholder for now.
-    response.sha = '';
+    response.sha = lastCommitShortHash;
     return response;
   }
 
@@ -146,7 +149,7 @@ export class BitbucketUrlReader implements UrlReader {
     return `bitbucket{host=${host},authed=${authed}}`;
   }
 
-  private async getLastCommitShortHash(url: string): Promise<String> {
+  private async getLastCommitShortHash(url: string): Promise<string> {
     const { name: repoName, owner: project, ref } = parseGitUri(url);
 
     let branch = ref;
